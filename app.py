@@ -4,27 +4,28 @@ import re
 import nltk
 import joblib
 import tensorflow as tf
-import os
 import gdown
+import os
 
 from nltk.corpus import stopwords
 
 # DOWNLOAD MODEL
 MODEL_PATH = "ann_model.keras"
+VECTORIZER_PATH = "tfidf_vectorizer.pkl"
 
 if not os.path.exists(MODEL_PATH):
     url = "https://drive.google.com/uc?id=16HH3agQO5Y5Sbi5u40LqNsY4AjqBEKT3"
-    with st.spinner("Downloading model... please wait"):
+    with st.spinner("Downloading model..."):
         gdown.download(url, MODEL_PATH, quiet=False)
 
-# LOAD MODEL & VECTORIZER
+# LOAD MODEL & VECTORIZER=
 model = tf.keras.models.load_model(MODEL_PATH)
-vectorizer = joblib.load("tfidf_vectorizer.pkl")
+vectorizer = joblib.load(VECTORIZER_PATH)
 
+# NLP SETUP
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
-# CLEAN TEXT
 def clean_text(text):
     text = text.lower()
     text = re.sub(r'http\S+|www\S+', ' ', text)
@@ -35,13 +36,24 @@ def clean_text(text):
     text = ' '.join([w for w in text.split() if w not in stop_words])
     return text
 
-# UI
+# STREAMLIT UI
 st.set_page_config(page_title="Fraud Job Detector", layout="centered")
 
 st.title("🧠 Job Fraud Detection System")
-st.write("Detect whether a job posting is real or fraudulent using AI.")
+st.write("AI-powered detection of fake job postings")
 
-mode = st.radio("Choose Input Type:", ["Full Text", "Structured Input"])
+mode = st.radio("Select Input Mode:", ["Full Text", "Structured Input"])
+
+# PREDICTION FUNCTION
+def predict(text):
+    cleaned = clean_text(text)
+
+    X = vectorizer.transform([cleaned]).toarray().astype(np.float32)
+
+    prob = model.predict(X, verbose=0)[0][0]
+    pred = int(prob > 0.5)
+
+    return pred, prob
 
 # FULL TEXT MODE
 if mode == "Full Text":
@@ -51,11 +63,7 @@ if mode == "Full Text":
         if job_text.strip() == "":
             st.warning("Please enter job description")
         else:
-            cleaned = clean_text(job_text)
-            X = vectorizer.transform([cleaned]).toarray()
-
-            prob = model.predict(X)[0][0]
-            pred = 1 if prob > 0.5 else 0
+            pred, prob = predict(job_text)
 
             st.subheader("Result")
 
@@ -73,21 +81,20 @@ else:
     benefits = st.text_area("Benefits")
 
     if st.button("Predict"):
-        combined = f"{title} {company} {description} {requirements} {benefits}"
-        cleaned = clean_text(combined)
+        combined_text = f"{title} {company} {description} {requirements} {benefits}"
 
-        X = vectorizer.transform([cleaned]).toarray()
-
-        prob = model.predict(X)[0][0]
-        pred = 1 if prob > 0.5 else 0
-
-        st.subheader("Result")
-
-        if pred == 1:
-            st.error(f"⚠ Fraudulent Job (Confidence: {prob:.2f})")
+        if combined_text.strip() == "":
+            st.warning("Please fill at least some fields")
         else:
-            st.success(f"✔ Legitimate Job (Confidence: {prob:.2f})")
+            pred, prob = predict(combined_text)
+
+            st.subheader("Result")
+
+            if pred == 1:
+                st.error(f"⚠ Fraudulent Job (Confidence: {prob:.2f})")
+            else:
+                st.success(f"✔ Legitimate Job (Confidence: {prob:.2f})")
 
 # FOOTER
 st.markdown("---")
-st.markdown("Built with TensorFlow & Streamlit")
+st.markdown("Built with TensorFlow + Streamlit + TF-IDF")
